@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Button, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { getRandomCategory, getRandomWordFromCategory } from '../lib/wordUtil';
+import { getRandomCategory, getRandomWordFromCategory, loadScores } from '../lib/utils';
 import * as Progress from 'react-native-progress';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -20,46 +20,29 @@ const HangmanGame = ({onSuccess}) => {
   const isGameOver = wrongGuesses >= maxWrongGuesses;
   const isGameWon = word.split('').every(letter => guessedLetters.includes(letter));
 
+  // useEffect for loading saved scores
+  useEffect(() => {
+    const initializeScores = async () => {
+      const { streak, highScore } = await loadScores();
+      setStreak(streak);
+      setHighScore(highScore);
+    };
+    initializeScores();
+  }, []);
+
+  // useEffect for setting random word on category change
   useEffect(() => {
     setWord(getRandomWordFromCategory(category));
   }, [category]);
 
+  // useEffect for handling game status changes
   useEffect(() => {
-    const loadScores = async () => {
-      try {
-        const savedStreak = await AsyncStorage.getItem('streak');
-        const savedHighScore = await AsyncStorage.getItem('highScore');
-        if (savedStreak !== null) {
-          setStreak(parseInt(savedStreak, 10));
-        }
-        if (savedHighScore !== null) {
-          setHighScore(parseInt(savedHighScore, 10));
-        }
-      } catch (error) {
-        console.error('Failed to load scores from storage', error);
-      }
-    };
-    loadScores();
-  }, []);
-
-  useEffect(() => {
-    const gameWon = async () => {
-        onSuccess()
-        handleGameWon();
-        await sleep(2)
-        restart()
-    }
-
     if (isGameOver) {
       handleGameOver();
     } else if (isGameWon) {
-        gameWon()
+      handleGameWon();
     }
   }, [isGameOver, isGameWon]);
-
-  const sleep = (seconds) => {
-    return new Promise(resolve => setTimeout(resolve, seconds * 1000));
-  };  
 
   const restart = () => {
     const newCategory = getRandomCategory();
@@ -67,30 +50,6 @@ const HangmanGame = ({onSuccess}) => {
     setWord(getRandomWordFromCategory(newCategory));
     setGuessedLetters([]);
     setWrongGuesses(0);
-  }
-
-  const newWord = () => {
-    const loadNewWord = async () => {
-      setLoading(true);
-      let newWord;
-      let attempts = 0;
-
-      do {
-        newWord = await fetchWord();
-        attempts++;
-      } while (usedWords.includes(newWord) && attempts < 10);
-
-      if (newWord) {
-        setUsedWords([...usedWords, newWord]);
-        await AsyncStorage.setItem('usedWords', JSON.stringify([...usedWords, newWord]));
-      }
-
-      setWord(newWord);
-      setGuessedLetters([]);
-      setWrongGuesses(0);
-      setLoading(false);
-    };
-    loadNewWord();
   }
 
   const handleGameOver = async () => {
@@ -107,13 +66,12 @@ const HangmanGame = ({onSuccess}) => {
       await AsyncStorage.setItem('highScore', newStreak.toString());
       setHighScore(newStreak);
     }
+
+    onSuccess()
+    setTimeout(restart, 2000);
   };
 
   const handleGuess = (letter) => {
-    if (guessedLetters.includes(letter)) {
-      alert('You already guessed that letter');
-      return;
-    }
     setGuessedLetters([...guessedLetters, letter]);
     if (!word.includes(letter)) {
         setWrongGuesses(wrongGuesses + 1);
@@ -122,11 +80,15 @@ const HangmanGame = ({onSuccess}) => {
 
   const renderWord = () => {
     return word.split('').map((letter, index) => (
-      <View key={index} style={{...styles.glassSquare}}>
-        <Text style={styles.letter}>
-          {guessedLetters.includes(letter) ? letter : ''}
-        </Text>
-      </View>
+      letter === ' ' ? (
+        <View key={index} style={styles.space}></View>
+      ) : (
+        <View key={index} style={styles.glassSquare}>
+          <Text style={styles.letter}>
+            {guessedLetters.includes(letter) ? letter : ''}
+          </Text>
+        </View>
+      )
     ));
   };
 
@@ -171,7 +133,7 @@ const HangmanGame = ({onSuccess}) => {
           {renderAlphabetButtons()}
         </View>
       )}
-      <Button title="Restart" onPress={restart} />
+      {/* <Button title="Restart" onPress={restart} /> */}
     </View>
   );
 };
@@ -219,6 +181,7 @@ const styles = StyleSheet.create({
   },
   wordContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     marginBottom: 20,
   },
   glassSquare: {
@@ -241,6 +204,9 @@ const styles = StyleSheet.create({
   letter: {
     fontSize: 22,
     color: 'white',
+  },
+  space: {
+    width: 20,
   },
   progressBarContainer: {
     marginVertical: 20,
